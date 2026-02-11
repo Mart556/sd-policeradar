@@ -40,6 +40,8 @@ local math_max = math.max
 local math_abs = math.abs
 local math_sqrt = math.sqrt
 
+local QBCore = exports['qb-core']:GetCoreObject();
+
 local state = {
     radarEnabled = false,
     radarWasEnabled = false,
@@ -60,15 +62,15 @@ local boloPlates = {}
 local boloLookup = {} --- O(1) plate lookup table
 
 local controlGroups = {
-    interact = {1,2,24,25,68,69,70,91,92},
+    interact = { 1, 2, 24, 25, 68, 69, 70, 91, 92 },
     typing = {
-        1,2,24,25,68,69,70,91,92,30,31,32,33,34,35,
-        71,72,73,74,75,76,59,60,61,62,63,64,65,
-        8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,
-        44,45,46,47,48,49,50,51,140,141,142,143,144,
-        177,178,179,180,181,199,200,201,202,203,204,322
+        1, 2, 24, 25, 68, 69, 70, 91, 92, 30, 31, 32, 33, 34, 35,
+        71, 72, 73, 74, 75, 76, 59, 60, 61, 62, 63, 64, 65,
+        8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        44, 45, 46, 47, 48, 49, 50, 51, 140, 141, 142, 143, 144,
+        177, 178, 179, 180, 181, 199, 200, 201, 202, 203, 204, 322
     },
-    scrollWheel = {14,15,81,82,99,100,115,116,261,262}
+    scrollWheel = { 14, 15, 81, 82, 99, 100, 115, 116, 261, 262 }
 }
 
 local savedPositionsCache = nil
@@ -91,14 +93,14 @@ local reopenAfterLeave = Config.ReopenRadarAfterLeave
 local notificationType = Config.NotificationType
 
 local modelValidityCache = {} --- [modelHash] = bool, whether the model is a ground vehicle
-local modelSphereCache = {} --- [modelHash] = { radius, size }, cached model dimensions for sphere intersection
-local vehiclePool = {} --- Refreshed periodically by a separate thread
+local modelSphereCache = {}   --- [modelHash] = { radius, size }, cached model dimensions for sphere intersection
+local vehiclePool = {}        --- Refreshed periodically by a separate thread
 
 --- Ray trace definitions: x offset from vehicle center for sphere intersection
 local rayTraces = {
-    { startX = 0.0,   endX = 0.0   },
-    { startX = -5.0,  endX = -5.0  },
-    { startX = 5.0,   endX = 5.0   },
+    { startX = 0.0,   endX = 0.0 },
+    { startX = -5.0,  endX = -5.0 },
+    { startX = 5.0,   endX = 5.0 },
     { startX = -10.0, endX = -10.0 },
     { startX = -17.0, endX = -17.0 },
 }
@@ -135,7 +137,7 @@ local function EnumerateVehicles()
             return
         end
 
-        local enum = {handle = iter, destructor = EndFindVehicle}
+        local enum = { handle = iter, destructor = EndFindVehicle }
         setmetatable(enum, entityEnumerator)
 
         local next = true
@@ -395,7 +397,8 @@ local plateReader = {
 --- @param coordTo vector3 The ray end position
 --- @return number vehicle
 local function GetVehicleInDirection(entFrom, coordFrom, coordTo)
-    local rayHandle = StartShapeTestCapsule(coordFrom.x, coordFrom.y, coordFrom.z, coordTo.x, coordTo.y, coordTo.z, 5.0, 10, entFrom, 7)
+    local rayHandle = StartShapeTestCapsule(coordFrom.x, coordFrom.y, coordFrom.z, coordTo.x, coordTo.y, coordTo.z, 5.0,
+        10, entFrom, 7)
     local _, _, _, _, vehicle = GetShapeTestResult(rayHandle)
     return vehicle
 end
@@ -493,35 +496,38 @@ end
 --- @param ped number The player ped
 --- @param veh number The vehicle entity
 --- @return boolean
-local function IsValidRadarVehicle(ped, veh)
-    if veh == 0 then
+local function IsValidRadarVehicle(vehicleId)
+    if vehicleId == 0 or not DoesEntityExist(vehicleId) then
         return false
     end
 
-    if not restrictClass then
-        return true
-    end
+    if not restrictClass then return true end
 
-    return GetVehicleClass(veh) == vehicleClass
+    if GetVehicleClass(vehicleId) ~= vehicleClass then return false end
+
+    local playerData = QBCore.Functions.GetPlayerData();
+    if playerData.job.name ~= 'police' then return false; end
+
+    return true;
 end
 
 --- Open the radar UI and send all initial configuration messages
 local function OpenRadarUI()
     local messages = {
-        {type = "open"},
-        {type = "setKeybinds", keybinds = Config.Keybinds},
-        {type = "setNotificationType", notificationType = notificationType},
-        {type = "setSpeedUnit", speedUnit = Config.SpeedUnit},
-        {type = "setLedGlow", ledGlow = Config.LedGlow ~= false}
+        { type = "open" },
+        { type = "setKeybinds",         keybinds = Config.Keybinds },
+        { type = "setNotificationType", notificationType = notificationType },
+        { type = "setSpeedUnit",        speedUnit = Config.SpeedUnit },
+        { type = "setLedGlow",          ledGlow = Config.LedGlow ~= false }
     }
 
     local saved = LoadSavedPositions()
     if saved then
-        messages[#messages + 1] = {type = "loadPositions", positions = saved}
+        messages[#messages + 1] = { type = "loadPositions", positions = saved }
     end
 
     if #boloPlates > 0 then
-        messages[#messages + 1] = {type = "updateBoloPlates", plates = boloPlates}
+        messages[#messages + 1] = { type = "updateBoloPlates", plates = boloPlates }
     end
 
     for i = 1, #messages do
@@ -534,7 +540,7 @@ local function CloseRadarUI()
     state.interacting = false
     state.inputActive = false
     SetNuiFocus(false, false)
-    SendNUIMessage({type = "close"})
+    SendNUIMessage({ type = "close" })
 end
 
 --- Toggle the radar on or off, spawning all necessary threads when enabling
@@ -542,7 +548,7 @@ local function ToggleRadar()
     local ped = PlayerPedId()
     local veh = GetVehiclePedIsIn(ped, false)
 
-    if not IsValidRadarVehicle(ped, veh) then
+    if not IsValidRadarVehicle(veh) then
         return
     end
 
@@ -607,9 +613,8 @@ local function DoRadarUpdate(ped, veh)
     local patrolSpeed = math_ceil(GetEntitySpeed(veh) * speedMultiplier)
 
     if fSpeed ~= state.lastFrontSpeed or rSpeed ~= state.lastRearSpeed or
-       patrolSpeed ~= state.lastPatrolSpeed or
-       fApproaching ~= state.frontApproaching or rApproaching ~= state.rearApproaching then
-
+        patrolSpeed ~= state.lastPatrolSpeed or
+        fApproaching ~= state.frontApproaching or rApproaching ~= state.rearApproaching then
         SendNUIMessage({
             type = "update",
             frontSpeed = fSpeed,
@@ -719,14 +724,14 @@ if Config.Keybinds.Interact and Config.Keybinds.Interact:match("%S") then
 end
 
 local simpleCommands = {
-    radarSave = {Config.Keybinds.SaveReading, "Save Radar Reading", {type = "saveReading"}},
-    radarLock = {Config.Keybinds.LockRadar, "Toggle Radar Lock", {type = "toggleLock"}},
-    radarLockSpeed = {Config.Keybinds.LockSpeed, "Lock/Unlock Speed", {type = "toggleSpeedLock"}},
-    radarLockPlate = {Config.Keybinds.LockPlate, "Lock/Unlock Plates", {type = "togglePlateLock"}},
-    radarToggleLog = {Config.Keybinds.ToggleLog, "Toggle Radar Log", {type = "toggleLog"}},
-    radarToggleBolo = {Config.Keybinds.ToggleBolo, "Toggle BOLO List", {type = "toggleBolo"}},
-    radarToggleKeybinds = {Config.Keybinds.ToggleKeybinds, "Toggle Radar Keybinds", {type = "toggleKeybinds"}},
-    radarSpeedLockThreshold = {Config.Keybinds.SpeedLockThreshold, "Open Speed Lock Threshold Menu", {type = "openSpeedLockModal"}},
+    radarSave = { Config.Keybinds.SaveReading, "Save Radar Reading", { type = "saveReading" } },
+    radarLock = { Config.Keybinds.LockRadar, "Toggle Radar Lock", { type = "toggleLock" } },
+    radarLockSpeed = { Config.Keybinds.LockSpeed, "Lock/Unlock Speed", { type = "toggleSpeedLock" } },
+    radarLockPlate = { Config.Keybinds.LockPlate, "Lock/Unlock Plates", { type = "togglePlateLock" } },
+    radarToggleLog = { Config.Keybinds.ToggleLog, "Toggle Radar Log", { type = "toggleLog" } },
+    radarToggleBolo = { Config.Keybinds.ToggleBolo, "Toggle BOLO List", { type = "toggleBolo" } },
+    radarToggleKeybinds = { Config.Keybinds.ToggleKeybinds, "Toggle Radar Keybinds", { type = "toggleKeybinds" } },
+    radarSpeedLockThreshold = { Config.Keybinds.SpeedLockThreshold, "Open Speed Lock Threshold Menu", { type = "openSpeedLockModal" } },
 }
 
 for cmd, info in pairs(simpleCommands) do
@@ -742,9 +747,9 @@ end
 --- Move mode commands: toggle positioning for individual elements
 --- These auto-enable interact mode so the mouse works for dragging
 local moveCommands = {
-    radarMoveRadar = {Config.Keybinds.MoveRadar, "Move Radar Panel", "togglePositionRadar"},
-    radarMoveLog = {Config.Keybinds.MoveLog, "Move Log Panel", "togglePositionLog"},
-    radarMoveBolo = {Config.Keybinds.MoveBolo, "Move BOLO Panel", "togglePositionBolo"},
+    radarMoveRadar = { Config.Keybinds.MoveRadar, "Move Radar Panel", "togglePositionRadar" },
+    radarMoveLog = { Config.Keybinds.MoveLog, "Move Log Panel", "togglePositionLog" },
+    radarMoveBolo = { Config.Keybinds.MoveBolo, "Move BOLO Panel", "togglePositionBolo" },
 }
 
 for cmd, info in pairs(moveCommands) do
@@ -760,7 +765,7 @@ for cmd, info in pairs(moveCommands) do
                 end
             end
 
-            SendNUIMessage({type = info[3]})
+            SendNUIMessage({ type = info[3] })
         end
     end, false)
     if info[1] and info[1]:match("%S") then
@@ -789,7 +794,7 @@ RegisterNUICallback("addBoloPlate", function(data, cb)
         if not boloLookup[upperPlate] then
             table_insert(boloPlates, upperPlate)
             boloLookup[upperPlate] = true
-            SendNUIMessage({type = "updateBoloPlates", plates = boloPlates})
+            SendNUIMessage({ type = "updateBoloPlates", plates = boloPlates })
         end
     end
     cb({})
@@ -805,7 +810,7 @@ RegisterNUICallback("removeBoloPlate", function(data, cb)
                 break
             end
         end
-        SendNUIMessage({type = "updateBoloPlates", plates = boloPlates})
+        SendNUIMessage({ type = "updateBoloPlates", plates = boloPlates })
     end
     cb({})
 end)
@@ -861,7 +866,7 @@ CreateThread(function()
         local veh = GetVehiclePedIsIn(ped, false)
 
         if veh ~= 0 then
-            if state.radarWasEnabled and not state.radarEnabled and IsValidRadarVehicle(ped, veh) then
+            if state.radarWasEnabled and not state.radarEnabled and IsValidRadarVehicle(veh) then
                 state.radarEnabled = true
                 state.currentVehicle = veh
                 OpenRadarUI()
@@ -928,7 +933,7 @@ exports('addBoloPlate', function(plate)
     boloLookup[upperPlate] = true
 
     if state.radarEnabled then
-        SendNUIMessage({type = "updateBoloPlates", plates = boloPlates})
+        SendNUIMessage({ type = "updateBoloPlates", plates = boloPlates })
     end
 
     return true
@@ -953,7 +958,7 @@ exports('removeBoloPlate', function(plate)
             boloLookup[upperPlate] = nil
 
             if state.radarEnabled then
-                SendNUIMessage({type = "updateBoloPlates", plates = boloPlates})
+                SendNUIMessage({ type = "updateBoloPlates", plates = boloPlates })
             end
 
             return true
